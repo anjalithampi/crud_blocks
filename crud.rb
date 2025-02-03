@@ -1,59 +1,82 @@
 #!/usr/bin/env ruby
 require 'json'
 
+# Block hash with inner hash
 blocks_hash = Hash.new { |hash, key| hash[key] = Hash.new(0) }
+# Counts hash with inner hash
 count_hash = Hash.new { |hash, key| hash[key] = Hash.new(0) }
+# Block count (BEGIN - COMMIT , BEGIN - ROLLBACK)
 blocks_count = 0
+# Only first argument; second and third is empty
 block_commands = [ "BEGIN", "COMMIT", "ROLLBACK" ]
+# Only first and second arguments; third is empty
 edit_commands = [ "GET", "COUNT", "DELETE" ]
 
-ARGF.readlines.each do |str|
-  line = str.split(' ')
+ARGF.readlines.each do |str| # Read file line by line
+  line = str.split(' ') # Split arguments
 
-  command = line[0].upcase
+  # If first argument is missing
+  if line[0].nil?
+    next
+  end
+
+  command = line[0].upcase # In case command is not in uppercase
   hashkey = line[1]
   hashvalue = line[2]
+
+  # If second and third arguments exists e.g COMMIT 10
+  if block_commands.include?(command) && (!hashkey.nil? || !hashvalue.nil?)
+    next
+  end
+  # If second argument is missing or third argument exists e.g: COUNT 10 a
+  if edit_commands.include?(command) && (hashkey.nil? || !hashvalue.nil?)
+    next
+  end
 
   ## -- DEBUG LINES --
   ## puts "COMMAND = #{command}; 1st INPUT = #{hashkey}; 2nd INPUT = #{hashvalue}; blocks_count = #{blocks_count}\n"
   ## -- DEBUG LINES --
 
-  if block_commands.include?(command) && (!hashkey.nil? || !hashvalue.nil?)
-    next
-  end
-  if edit_commands.include?(command) && (hashkey.nil? || !hashvalue.nil?)
-    next
-  end
-
+  # Switch case for arguments
   case command
   when "BEGIN"
+    # If there are no prior blocks
     if blocks_hash[blocks_count].empty?
-      blocks_hash[blocks_count + 1] = Hash.new(0)
-      count_hash[blocks_count] = Hash.new(0)
-      count_hash[blocks_count + 1] = Hash.new(0)
+      blocks_hash[blocks_count + 1] = Hash.new(0) # Initialise block hash
+      count_hash[blocks_count] = Hash.new(0) # Element 0 for permanent changes outside blocks
+      count_hash[blocks_count + 1] = Hash.new(0) # Element 1 for first block hash
+    # If even 1 block exists, initialise new inner hash with previous hash so that they do not reference same address
     else
       blocks_hash[blocks_count + 1] = JSON.parse(blocks_hash[blocks_count].to_json, symbolize_names: false)
       count_hash[blocks_count + 1] = JSON.parse(count_hash[blocks_count].to_json, symbolize_names: false)
     end
     blocks_count += 1
+
   when "COMMIT"
+    # Should have a BEGIN command before
     if blocks_count.zero?
       puts "ERROR! No corresponding BEGIN block!"
       next
     end
+    # Copy current block hash to previous hash
     blocks_hash[blocks_count - 1] = JSON.parse(blocks_hash[blocks_count].to_json, symbolize_names: false)
     count_hash[blocks_count - 1] = JSON.parse(count_hash[blocks_count].to_json, symbolize_names: false)
+    # Remove current hash
     blocks_hash[blocks_count] = {}
     count_hash[blocks_count] = {}
+    # Block completed ; so reduce block count
     blocks_count -= 1
 
   when "ROLLBACK"
+    # Should have a BEGIN command before
     if blocks_count.zero?
       puts "ERROR! No corresponding BEGIN block!"
       next
     end
+    # Remove current hash
     blocks_hash[blocks_count] = {}
     count_hash[blocks_count] = {}
+    # Block completed ; so reduce block count
     blocks_count -= 1
 
   when "SET"
