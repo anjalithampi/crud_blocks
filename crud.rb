@@ -14,16 +14,16 @@ ARGF.readlines.each do |str|
   hashkey = line[1]
   hashvalue = line[2]
 
+  ## -- DEBUG LINES --
+  ## puts "COMMAND = #{command}; 1st INPUT = #{hashkey}; 2nd INPUT = #{hashvalue}; blocks_count = #{blocks_count}\n"
+  ## -- DEBUG LINES --
+
   if block_commands.include?(command) && (!hashkey.nil? || !hashvalue.nil?)
     next
   end
   if edit_commands.include?(command) && (hashkey.nil? || !hashvalue.nil?)
     next
   end
-
-  ## -- DEBUG LINES --
-  ## puts "COMMAND = #{command}; 1st INPUT = #{hashkey}; 2nd INPUT = #{hashvalue}; blocks_count = #{blocks_count}\n"
-  ## -- DEBUG LINES --
 
   case command
   when "BEGIN"

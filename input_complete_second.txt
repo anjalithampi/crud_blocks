@@ -1,3 +1,4 @@
+BEGIN 10
 BEGIN
 GET a
 SET b 20
