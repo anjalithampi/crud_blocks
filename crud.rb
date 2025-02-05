@@ -1,128 +1,115 @@
 #!/usr/bin/env ruby
 require 'json'
 
-# Block hash with inner hash
-blocks_hash = Hash.new { |hash, key| hash[key] = Hash.new(0) }
-# Counts hash with inner hash
-count_hash = Hash.new { |hash, key| hash[key] = Hash.new(0) }
-# Block count (BEGIN - COMMIT , BEGIN - ROLLBACK)
-blocks_count = 0
+# Stack for blocks - each element is a hash of key-value pairs 
+blocks_stack = [Hash.new] # Block elements and their values
+count_stack = [Hash.new(0)] # Count of values for the corresponding block elements
+
+## -- DEBUG LINES --
+## puts "NEW block and count stack"
+## -- DEBUG LINES --
+
 # Only first argument; second and third is empty
 block_commands = [ "BEGIN", "COMMIT", "ROLLBACK" ]
 # Only first and second arguments; third is empty
 edit_commands = [ "GET", "COUNT", "DELETE" ]
 
-ARGF.readlines.each do |str| # Read file line by line
-  line = str.split(' ') # Split arguments
+ARGF.readlines.each do |line| # Read file line by line
+  command, blockkey, blockvalue = line.split(' ').map(&:strip) # Parse the line
+
+  ## -- DEBUG LINES --
+  ## puts "FULL BLOCK LIST = #{blocks_stack}"
+  ## puts "VALUES = #{count_stack}"
+  ## puts "----------------------------------------------------------------"
+  ## puts "COMMAND = #{command}; 1st INPUT = #{blockkey}; 2nd INPUT = #{blockvalue}"
+  ## -- DEBUG LINES-
+
 
   # If first argument is missing
-  if line[0].nil?
+  if command.nil?
     next
   end
 
-  command = line[0].upcase # In case command is not in uppercase
-  hashkey = line[1]
-  hashvalue = line[2]
-
-  # If second and third arguments exists e.g COMMIT 10
-  if block_commands.include?(command) && (!hashkey.nil? || !hashvalue.nil?)
+  # Discard current & proceed to next command if
+  # second and third arguments exists e.g COMMIT 10
+  if block_commands.include?(command) && (!blockkey.nil? || !blockvalue.nil?)
     next
   end
-  # If second argument is missing or third argument exists e.g: COUNT 10 a
-  if edit_commands.include?(command) && (hashkey.nil? || !hashvalue.nil?)
+  # Discard current & proceed to next command if
+  # second argument is missing or third argument exists e.g: COUNT 10 a
+  if edit_commands.include?(command) && (blockkey.nil? || !blockvalue.nil?)
     next
   end
-
-  ## -- DEBUG LINES --
-  ## puts "COMMAND = #{command}; 1st INPUT = #{hashkey}; 2nd INPUT = #{hashvalue}; blocks_count = #{blocks_count}\n"
-  ## -- DEBUG LINES --
 
   # Switch case for arguments
-  case command
+  case command.upcase
   when "BEGIN"
-    # If there are no prior blocks
-    if blocks_hash[blocks_count].empty?
-      blocks_hash[blocks_count + 1] = Hash.new(0) # Initialise block hash
-      count_hash[blocks_count] = Hash.new(0) # Element 0 for permanent changes outside blocks
-      count_hash[blocks_count + 1] = Hash.new(0) # Element 1 for first block hash
-    # If even 1 block exists, initialise new inner hash with previous hash so that they do not reference same address
-    else
-      blocks_hash[blocks_count + 1] = JSON.parse(blocks_hash[blocks_count].to_json, symbolize_names: false)
-      count_hash[blocks_count + 1] = JSON.parse(count_hash[blocks_count].to_json, symbolize_names: false)
-    end
-    blocks_count += 1
+    # Push a new current element which is a copy of the last stack element
+    blocks_stack.push(blocks_stack.last.dup)
+    count_stack.push(count_stack.last.dup)
 
   when "COMMIT"
-    # Should have a BEGIN command before
-    if blocks_count.zero?
+    # Display error if paired "BEGIN" command was not set
+    if blocks_stack.size == 1
       puts "ERROR! No corresponding BEGIN block!"
       next
     end
-    # Copy current block hash to previous hash
-    blocks_hash[blocks_count - 1] = JSON.parse(blocks_hash[blocks_count].to_json, symbolize_names: false)
-    count_hash[blocks_count - 1] = JSON.parse(count_hash[blocks_count].to_json, symbolize_names: false)
-    # Remove current hash
-    blocks_hash[blocks_count] = {}
-    count_hash[blocks_count] = {}
-    # Block completed ; so reduce block count
-    blocks_count -= 1
+
+    # Merge the current block of both stacks into the previous one 
+    # and remove the current stack
+    commit_block = blocks_stack.pop
+    commit_count = count_stack.pop
+
+    blocks_stack.last.merge!(commit_block)
+    count_stack.last.merge!(commit_count)
 
   when "ROLLBACK"
-    # Should have a BEGIN command before
-    if blocks_count.zero?
+    # Display error if paired "BEGIN" command was not set
+    if blocks_stack.size == 1
       puts "ERROR! No corresponding BEGIN block!"
       next
     end
-    # Remove current hash
-    blocks_hash[blocks_count] = {}
-    count_hash[blocks_count] = {}
-    # Block completed ; so reduce block count
-    blocks_count -= 1
+
+    # Discard the top stack
+    blocks_stack.pop
+    count_stack.pop
 
   when "SET"
-    # If 'value' input is empty e.g : SET a
-    if hashvalue.nil?
-      # if key already exists skip to next command
+    # Discard current and proceed to next if value is nil
+    if blockvalue.nil?
       next
-    else # If command is correct e.g: SET a 10
-      next if(blocks_hash[blocks_count][hashkey] == hashvalue) # If old value is same as new value, skip to next command
-
-      if count_hash[blocks_count].key?(hashvalue) # If hashalue already exists in count_hash, reduce its count
-        count_hash[blocks_count][hashvalue] += 1
-      elsif blocks_hash[blocks_count].key?(hashkey) # If hashkey already exists in blocks_hash, reduce its count ; adjust count_hash keys' values
-        oldvalue = blocks_hash[blocks_count][hashkey]
-        count_hash[blocks_count][oldvalue] -= 1
-        count_hash[blocks_count][hashvalue] = 1
-      else # If neither hashkey exists in blocks_hash nor hashvalue exists in count_hash
-        count_hash[blocks_count][hashvalue] = 1
-      end
-
-      blocks_hash[blocks_count][hashkey] = hashvalue # Now set key to new value
     end
+
+    current_block = blocks_stack.last
+    current_count = count_stack.last
+
+    # Fix the count of current and new values of key
+    old_value = current_block[blockkey]
+    next if old_value == blockvalue
+
+    # Avoid -1 as key in count_stack
+    current_count[old_value] -= 1 unless old_value.nil?
+    # Remove key from count_stack if existing value is 0 or less 
+    current_count.delete(old_value) if current_count[old_value] <= 1
+
+    # Update key-value in block stack
+    current_block[blockkey] = blockvalue
+    current_count[blockvalue] += 1
 
   when "GET"
-    # If key exists, then print element value, else print "NULL"
-    blocks_hash[blocks_count].key?(hashkey) ? puts(blocks_hash[blocks_count][hashkey]) : puts("NULL")
+    puts blocks_stack.last[blockkey] || "NULL"
 
   when "COUNT"
-    # If key exists, then print value count, else print "NULL"
-    count_hash[blocks_count].key?(hashkey) ? puts(count_hash[blocks_count][hashkey]) : puts("NULL")
+    count_stack.last[blockkey].zero? ? puts("NULL") : puts(count_stack.last[blockkey])
 
   when "DELETE"
-    # If key exists in elements hash
-    if blocks_hash[blocks_count].key?(hashkey)
-      value_key = blocks_hash[blocks_count][hashkey]
-      count_hash[blocks_count][value_key] > 1 ? count_hash[blocks_count][value_key] -= 1 : count_hash[blocks_count].delete(value_key)
-      blocks_hash[blocks_count].delete(hashkey)
-      #puts "Deleted #{hashkey}"
-    #else
-      #puts("#{hashkey} not present! Not deleted!")
+    current_block = blocks_stack.last
+    current_count = count_stack.last
+
+    if current_block.key?(blockkey)
+      current_value = current_block.delete(blockkey)
+      current_count[current_value] -= 1 if current_count[current_value] >= 1
+      current_count.delete(current_value) if current_count[current_value] == 0
     end
   end
-
-  ## -- DEBUG LINES --
-  ## print("\nFULL BLOCK LIST = #{blocks_hash}\n")
-  ## print("VALUES = #{count_hash}\n")
-  ## print("----------------------------------------------------------------\n")
-  ## -- DEBUG LINES --
 end
