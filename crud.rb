@@ -1,5 +1,4 @@
 #!/usr/bin/env ruby
-require 'json'
 
 # Stack for blocks - each element is a hash of key-value pairs 
 blocks_stack = [Hash.new]  # Block elements and their values
