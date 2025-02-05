@@ -56,8 +56,10 @@ class TransactionalKeyValueStore
     old_value = current_block[blockkey]
     return if old_value == blockvalue # No need to update if values are the same
 
-    current_count[old_value] -= 1 unless old_value.nil? # Avoiding -1 as key in @count_stack
-    current_count.delete(old_value) if current_count[old_value] <= 1 # Delete key from @count_stack if count reaches 0
+    if old_value
+      current_count[old_value] -= 1 # Avoiding -1 as key in @count_stack
+      current_count.delete(old_value) if current_count[old_value] <= 1 # Delete key from @count_stack if count reaches 0
+    end
 
     # Update key-value in block stack
     current_block[blockkey] = blockvalue
@@ -66,12 +68,13 @@ class TransactionalKeyValueStore
 
   # Retrieves the value of the given key
   def get(blockkey)
-    puts @blocks_stack.last[blockkey] || "NULL"
+    puts @blocks_stack.last.fetch(blockkey, "NULL")
   end
 
   # Returns the count of the occurances of the given value
   def count(blockkey)
     puts @count_stack.last[blockkey].zero? ? "NULL" : @count_stack.last[blockkey]
+
   end
 
   # Deletes the given key from the current transaction block
@@ -99,24 +102,33 @@ class TransactionalKeyValueStore
     ## puts "COMMAND = #{command}; 1st INPUT = #{blockkey}; 2nd INPUT = #{blockvalue}\n"
     ## -- DEBUG LINES --
 
-    # If first argument is missing
-    return false if command.nil?
+    case command
+    when "BEGIN", "COMMIT", "ROLLBACK"
+      return blockkey.nil? && blockvalue.nil?
+    when "GET", "COUNT", "DELETE"
+      return !blockkey.nil? && blockvalue.nil?
+    when "SET"
+      return !blockkey.nil? && !blockvalue.nil?
+    end
 
     # Discard current & proceed to next command if
     # second and third arguments exist (e.g., COMMIT 10)
-    return false if block_commands.include?(command) && (!blockkey.nil? || !blockvalue.nil?)
+    #return if block_commands.include?(command) && (!blockkey.nil? || !blockvalue.nil?)
 
     # Discard current & proceed to next command if
     # second argument is missing or third argument exists (e.g., COUNT 10 a)
-    return false if edit_commands.include?(command) && (blockkey.nil? || !blockvalue.nil?)
+    #return false if edit_commands.include?(command) && (blockkey.nil? || !blockvalue.nil?)
 
-    # Returns if arguments are valid
-    return true
+    # Returns if arguments are invalid
+    false
   end
 
   # Processes the command line input
   def process_command(line)
     command, blockkey, blockvalue = line.split(' ').map(&:strip) # Parse the line
+
+    # If first argument is missing
+    return if command.nil?
 
     return unless valid_command?(command, blockkey, blockvalue)
 
