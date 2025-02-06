@@ -46,9 +46,6 @@ class TransactionalKeyValueStore
 
   # Sets the given key to the given value
   def set(blockkey, blockvalue)
-    # Discard if value is nil
-    return if blockvalue.nil?
-
     current_block = @blocks_stack.last
     current_count = @count_stack.last
 
