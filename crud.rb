@@ -111,14 +111,6 @@ class TransactionalKeyValueStore
       return !blockkey.nil? && !blockvalue.nil?
     end
 
-    # Discard current & proceed to next command if
-    # second and third arguments exist (e.g., COMMIT 10)
-    #return if block_commands.include?(command) && (!blockkey.nil? || !blockvalue.nil?)
-
-    # Discard current & proceed to next command if
-    # second argument is missing or third argument exists (e.g., COUNT 10 a)
-    #return false if edit_commands.include?(command) && (blockkey.nil? || !blockvalue.nil?)
-
     # Returns if arguments are invalid
     false
   end
